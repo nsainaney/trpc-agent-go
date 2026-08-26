@@ -18,12 +18,13 @@ import (
 	"strings"
 
 	"trpc.group/trpc-go/trpc-agent-go/agent"
+	itool "trpc.group/trpc-go/trpc-agent-go/internal/tool"
 	"trpc.group/trpc-go/trpc-agent-go/tool"
 )
 
 // declaredCallableTool is a request-local tool wrapper that returns
 // an augmented Declaration while delegating Call and optional interfaces
-// (SkipSummarization) to the original.
+// (SkipSummarization, IsConcurrencySafe, ToolMetadata) to the original.
 // It is NOT a persistent wrapper — it only lives within one
 // BeforeModel callback's Request.Tools replacement. The original
 // tool object is never mutated.
@@ -116,6 +117,28 @@ func (t *declaredCallableTool) SkipSummarization() bool {
 		return s.SkipSummarization()
 	}
 	return false
+}
+
+// IsConcurrencySafe delegates the inner tool's concurrency objection.
+//
+// The parallel paths ask this of whatever sits in Request.Tools, which is this
+// wrapper once BeforeModel has run. Without the delegation, a tool that declined
+// to share its turn would be readmitted to the parallel path purely because
+// ToolPipe augmented its schema. Resolution goes through itool.IsConcurrencySafe
+// so a NamedTool or declaration overlay in between cannot hide it either.
+func (t *declaredCallableTool) IsConcurrencySafe() bool {
+	return itool.IsConcurrencySafe(t.inner)
+}
+
+// ToolMetadata delegates the inner tool's descriptive metadata.
+//
+// It exists because of IsConcurrencySafe above: without a ToolMetadata method,
+// tool.MetadataOf falls back to ConcurrencyAware and reports ConcurrencySafe:
+// true for every wrapped tool, promising the same-tool reentrancy the inner tool
+// never claimed. Permission policies read that off this wrapper. Delegating also
+// stops it dropping ReadOnly, Destructive, and OpenWorld.
+func (t *declaredCallableTool) ToolMetadata() tool.ToolMetadata {
+	return tool.MetadataOf(t.inner)
 }
 
 // StreamableCall implements tool.StreamableTool — only on the streamable wrapper.
@@ -436,9 +459,11 @@ func resultToString(result any) string {
 
 // Compile-time interface checks.
 var (
-	_ tool.Tool           = (*declaredCallableTool)(nil)
-	_ tool.CallableTool   = (*declaredCallableTool)(nil)
-	_ tool.Tool           = (*declaredStreamableCallableTool)(nil)
-	_ tool.CallableTool   = (*declaredStreamableCallableTool)(nil)
-	_ tool.StreamableTool = (*declaredStreamableCallableTool)(nil)
+	_ tool.Tool             = (*declaredCallableTool)(nil)
+	_ tool.CallableTool     = (*declaredCallableTool)(nil)
+	_ tool.ConcurrencyAware = (*declaredCallableTool)(nil)
+	_ tool.MetadataProvider = (*declaredCallableTool)(nil)
+	_ tool.Tool             = (*declaredStreamableCallableTool)(nil)
+	_ tool.CallableTool     = (*declaredStreamableCallableTool)(nil)
+	_ tool.StreamableTool   = (*declaredStreamableCallableTool)(nil)
 )

@@ -463,6 +463,35 @@ func TestRenamedTool_ToolMetadata(t *testing.T) {
 	assert.NotNil(t, meta)
 }
 
+// Renaming must not change how a tool is scheduled.
+//
+// The wrapper answers on behalf of the tool it renames, so it must carry an
+// objection through — otherwise exposure through a toolbox alone would readmit an
+// objecting tool — and must not invent one for a tool that raised none.
+func TestRenamedTool_IsConcurrencySafe(t *testing.T) {
+	plain := newRenamedTool(newTestTool("echo", "echo input"), "tools")
+	assert.True(t, plain.(*renamedTool).IsConcurrencySafe())
+	assert.True(t, tool.IsConcurrencySafe(plain))
+
+	objecting := newRenamedTool(&fakeObjectingTool{name: "solo"}, "tools")
+	assert.False(t, objecting.(*renamedTool).IsConcurrencySafe())
+	assert.False(t, tool.IsConcurrencySafe(objecting))
+}
+
+// fakeObjectingTool declines to run beside other tool calls, as the transfer and
+// await_user_reply tools do.
+type fakeObjectingTool struct {
+	name string
+}
+
+func (f *fakeObjectingTool) Declaration() *tool.Declaration {
+	return &tool.Declaration{Name: f.name}
+}
+
+func (f *fakeObjectingTool) Call(context.Context, []byte) (any, error) { return nil, nil }
+
+func (f *fakeObjectingTool) IsConcurrencySafe() bool { return false }
+
 func TestRenamedTool_NonCallable(t *testing.T) {
 	// Create a tool that is NOT CallableTool.
 	nonCallable := &fakeNonCallableTool{name: "nc", desc: "not callable"}
