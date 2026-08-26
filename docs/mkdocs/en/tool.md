@@ -2297,6 +2297,14 @@ ts := toolsearch.New(
 // model can build the params object for the following call_tool invocation.
 ```
 
+In this mode the parallel schedulers see `call_tool`, not the tool it will
+dispatch to: the target is resolved from `tool_name` only after the turn has
+been admitted. `call_tool` therefore
+[declines to share a turn](#declining-to-share-a-turn) whenever any tool it can
+reach — deferred or preset — declines, and stays admissible while none does, so
+a dispatch-mode turn keeps its parallelism unless an objecting tool is
+registered.
+
 ##### `WithToolPermissionFilter` Example
 
 Gate deferred tools per caller (e.g. by the authenticated user's RBAC role):
@@ -2918,6 +2926,18 @@ no objection and promises nothing — it is the default, and `tool.MetadataOf`
 reports nothing for it. The framework never infers an objection from
 `ToolMetadata`, so an existing tool that publishes metadata keeps the
 scheduling it has today.
+
+When parallel tools are enabled and any available tool objects, **LLMAgent**
+also tells the model, appending a short notice to the system prompt that names
+those tools and explains that a turn including one of them runs every call in
+it one after another. Without that, a model batching an exclusive tool with
+three cheap reads would quietly serialize all four with no way to see why.
+
+This notice is LLMAgent's alone. A Graph Tools node applies the same execution
+gate — an objecting call keeps its batch sequential either way — but it does not
+annotate the model request that produced the calls, so a graph whose model step
+is built separately gets the behavior without the explanation. Add the same
+guidance to that step's own system prompt if the model needs to see it.
 
 **Parallel execution effect:**
 
