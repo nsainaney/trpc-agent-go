@@ -2299,10 +2299,12 @@ ts := toolsearch.New(
 
 In this mode the parallel schedulers see `call_tool`, not the tool it will
 dispatch to: the target is resolved from `tool_name` only after the turn has
-been admitted. `call_tool` therefore
-[declines to share a turn](#declining-to-share-a-turn) whenever any tool it can
-reach — deferred or preset — declines, and stays admissible while none does, so
-a dispatch-mode turn keeps its parallelism unless an objecting tool is
+been admitted. `call_tool` is therefore advertised as
+[declining to share a turn](#declining-to-share-a-turn) whenever any tool it can
+reach — deferred or preset — declines. While none does it declares nothing at
+all, exactly like a tool implementing neither concurrency interface: it is
+admitted, and no reentrancy guarantee is made on behalf of the hidden targets.
+A dispatch-mode turn thus keeps its parallelism unless an objecting tool is
 registered.
 
 ##### `WithToolPermissionFilter` Example
@@ -2926,6 +2928,21 @@ no objection and promises nothing — it is the default, and `tool.MetadataOf`
 reports nothing for it. The framework never infers an objection from
 `ToolMetadata`, so an existing tool that publishes metadata keeps the
 scheduling it has today.
+
+Those three states survive the framework's own wrappers. A toolset's
+name-prefixed tool, a ToolPipe-augmented tool, a renamed deferred tool, and a
+declaration overlay do not implement `ConcurrencyAware` themselves — a wrapper
+answering with a `bool` would have to turn "declared nothing" into an objection
+or a guarantee — but expose the tool they wrap, and `tool.IsConcurrencySafe`
+resolves through them before asking. Custom schedulers and policies should call
+`tool.IsConcurrencySafe` rather than type-assert `ConcurrencyAware` on an entry
+in `Request.Tools`, which is usually such a wrapper.
+
+The framework tools whose effect is a mutation of the invocation or a
+read-modify-write over the session already object: `transfer_to_agent`,
+`await_user_reply`, the TodoEnforcer's `todo_declare_blocker`, and the Goal
+extension's `create_goal` and `update_goal` (its `get_goal` only reads). A turn
+containing one of them runs sequentially when parallel tools are enabled.
 
 When parallel tools are enabled and any available tool objects, **LLMAgent**
 also tells the model, appending a short notice to the system prompt that names
